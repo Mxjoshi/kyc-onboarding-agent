@@ -66,6 +66,16 @@ function describeCase(caseFacts) {
   );
 }
 
+// Build the retrieval query for a case. Exported so the in-app RAG view can show the SAME
+// retrieval the real decision uses (not a different, demo-only query).
+export function buildCaseQuery(caseFacts) {
+  const summary = describeCase(caseFacts);
+  return (
+    `Onboarding decision. ${summary} ` +
+    `Required documents, identity verification, AML risk and sanctions screening, escalation, decision outcomes.`
+  );
+}
+
 const OUTPUT_SCHEMA = {
   type: "object",
   properties: {
@@ -114,9 +124,7 @@ Make the output easy to glance at:
 export async function answerCase(caseFacts, opts = {}) {
   const summary = describeCase(caseFacts);
   opts.onStep?.("retrieving");
-  const all = await scoreAll(
-    `Onboarding decision. ${summary} Required documents, identity verification, AML risk and sanctions screening, escalation, decision outcomes.`
-  );
+  const all = await scoreAll(buildCaseQuery(caseFacts));
   const retrieved = opts.breakIt ? all.slice(-4) : all.slice(0, 7);
   const policyText = retrieved
     .map((c) => `[${c.section}]\n${c.text}`)

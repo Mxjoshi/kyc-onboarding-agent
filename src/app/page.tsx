@@ -77,9 +77,26 @@ const NAV = [
   { id: "dashboard", label: "Dashboard" },
   { id: "onboarding", label: "Onboarding" },
   { id: "review", label: "Review queue" },
+  { id: "retrieval", label: "RAG search" },
   { id: "evals", label: "Evals" },
   { id: "audit", label: "Audit log" },
   { id: "report", label: "Report" },
+];
+
+// The pipeline map shown on the Dashboard. Click a step to read what it does.
+const PIPELINE = [
+  { icon: "📂", label: "Documents in", tech: "input", core: false,
+    desc: "Two things go in: the customer's own files (passport, Emirates ID, visa, salary, tenancy) and the bank's KYC/AML policy. Everything here is synthetic." },
+  { icon: "🔍", label: "Policy search", tech: "RAG · transformers.js", core: false, goto: "retrieval",
+    desc: "Before deciding, the app finds the few policy sections that relate to this case by meaning, and gives the agent only those. Open the RAG search tab to watch this run." },
+  { icon: "🤖", label: "Agent decides", tech: "Claude", core: true,
+    desc: "Claude reads ONLY the retrieved sections plus the documents, then recommends proceed / request documents / escalate, citing the exact section for every claim. It refuses instead of guessing when the policy is silent." },
+  { icon: "⚖️", label: "Trust judge", tech: "Claude", core: true, goto: "evals",
+    desc: "A second, independent Claude call grades that answer against the 4-point rubric, scores it, and tags the root cause of any failure. This is the trust layer. Open the Evals tab to see it catch planted bad answers." },
+  { icon: "📋", label: "Audit log", tech: "in-memory store", core: false, goto: "audit",
+    desc: "Every decision (outcome, trust score, root-cause tag, officer action, time) is recorded. It powers the Dashboard, Review queue, Audit log and Report." },
+  { icon: "🤝", label: "Handoff", tech: "→ capstone", core: false,
+    desc: "The verified customer profile flows to the credit copilot (the capstone), which reads the economic fields as its Applicant and decides approve / decline / refer." },
 ];
 
 export default function Home() {
@@ -95,12 +112,16 @@ export default function Home() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [evals, setEvals] = useState<any>(null);
   const [evalLoading, setEvalLoading] = useState(false);
+  const [retr, setRetr] = useState<any>(null);
+  const [retrLoading, setRetrLoading] = useState(false);
+  const [retrCustomer, setRetrCustomer] = useState<string>("");
+  const [mapStep, setMapStep] = useState(0);
   const [flt, setFlt] = useState({ outcome: "all", status: "all", mode: "all", q: "" });
 
   useEffect(() => {
     fetch("/api/customers").then((r) => r.json()).then((d) => {
       setCustomers(d.customers);
-      if (d.customers?.length) setSelected(d.customers[0].id);
+      if (d.customers?.length) { setSelected(d.customers[0].id); setRetrCustomer(d.customers[0].id); }
     });
     fetchLog();
   }, []);
@@ -122,6 +143,13 @@ export default function Home() {
     setEvalLoading(true);
     try { const d = await fetch("/api/discrimination", { method: "POST" }).then((r) => r.json()); setEvals(d); }
     catch {} finally { setEvalLoading(false); }
+  }
+  async function runRetrieval() {
+    const id = retrCustomer || customers[0]?.id;
+    if (!id) return;
+    setRetrLoading(true); setRetr(null);
+    try { const d = await fetch("/api/retrieval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customer: id }) }).then((r) => r.json()); setRetr(d); }
+    catch {} finally { setRetrLoading(false); }
   }
   async function clearLog() {
     try { const d = await fetch("/api/log", { method: "DELETE" }).then((r) => r.json()); setLog(d.records || []); } catch {}
@@ -218,6 +246,28 @@ export default function Home() {
               <span className="hero-tag">Refuses when unsure</span>
               <span className="hero-tag">Escalates to a human</span>
               <span className="hero-tag">Self-graded trust layer</span>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-h">How it works &middot; the pipeline map<Info text="Click any step to read what it does. Steps in green are the trust layer - the part that makes the answer defensible." /></div>
+            <div className="pmap">
+              {PIPELINE.map((s, i) => (
+                <div key={i} className="pmap-cell">
+                  <button className={`pmap-step${i === mapStep ? " active" : ""}${s.core ? " core" : ""}`} onClick={() => setMapStep(i)}>
+                    <span className="pmap-ic">{s.icon}</span>
+                    <span className="pmap-lb">{s.label}</span>
+                    <span className="pmap-tc">{s.tech}</span>
+                  </button>
+                  {i < PIPELINE.length - 1 && <span className="pmap-arrow">→</span>}
+                </div>
+              ))}
+            </div>
+            <div className="pmap-detail">
+              <p><b>{PIPELINE[mapStep].icon} {PIPELINE[mapStep].label}.</b> {PIPELINE[mapStep].desc}</p>
+              {PIPELINE[mapStep].goto && (
+                <button className="btn-ghost" onClick={() => setView(PIPELINE[mapStep].goto as string)}>Open this step →</button>
+              )}
             </div>
           </div>
 
@@ -447,6 +497,60 @@ export default function Home() {
       )}
 
       {/* ===================== EVALS ===================== */}
+      {view === "retrieval" && (
+        <div className="page">
+          <div className="panel">
+            <div className="panel-h">Policy search (RAG) - the step before the agent decides</div>
+            <table className="audit rubric-table" style={{ marginBottom: 14 }}>
+              <tbody>
+                <tr><td><b>What this is</b></td><td>RAG = retrieval-augmented generation. Before the AI decides, we FIND the few policy sections that actually relate to the case and give it ONLY those. The AI never answers from memory.</td></tr>
+                <tr><td><b>Why it matters</b></td><td>Grounding every answer in retrieved policy is what makes citations possible and stops the AI inventing rules. Good decisions start with good retrieval.</td></tr>
+                <tr><td><b>How it works</b></td><td>Each policy section and the case are turned into &quot;meaning-numbers&quot; (embeddings) by a small model running locally (transformers.js). We score every section by closeness in meaning (cosine similarity) and keep the top {retr?.top_k ?? 7}.</td></tr>
+                <tr><td><b>How to read it</b></td><td>Higher score = closer in meaning. The green &quot;used&quot; rows are sent to the agent; the grey ones are dropped. (In Onboarding, &quot;Break it&quot; deliberately feeds the agent the dropped rows instead - bad retrieval - so you can watch the trust layer catch the failure.)</td></tr>
+              </tbody>
+            </table>
+            <div className="run-row">
+              <label className="run-label">Customer&nbsp;
+                <select value={retrCustomer} onChange={(e) => { setRetrCustomer(e.target.value); setRetr(null); }}>
+                  {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+              <button className="btn-primary" onClick={runRetrieval} disabled={retrLoading}>
+                {retrLoading ? "Searching the policy..." : "Run policy search"}
+              </button>
+            </div>
+          </div>
+
+          {retr && (
+            <div className="panel">
+              <div className="panel-h">Result &middot; {retr.name}</div>
+              <p className="check-reason" style={{ marginBottom: 6 }}>The case was turned into this search query, then matched against all {retr.total} policy sections:</p>
+              <pre className="cite-src" style={{ whiteSpace: "pre-wrap", marginBottom: 14 }}>{retr.query}</pre>
+              <table className="audit">
+                <thead><tr><th>#</th><th>Policy section</th><th>Match (similarity)</th><th>Sent to agent?</th></tr></thead>
+                <tbody>
+                  {retr.sections.map((s: any) => (
+                    <tr key={s.rank} style={{ opacity: s.used ? 1 : 0.5 }}>
+                      <td>{s.rank}</td>
+                      <td>
+                        <b>{s.section}</b>
+                        <div className="muted-sm">{s.preview}...</div>
+                      </td>
+                      <td style={{ minWidth: 160 }}>
+                        <div className="simbar"><div className="simfill" style={{ width: `${Math.max(2, Math.round(s.score * 100))}%`, background: s.used ? "var(--green)" : "var(--muted)" }} /></div>
+                        <span className="muted-sm">{s.score.toFixed(3)}</span>
+                      </td>
+                      <td>{s.used ? <span className="chip green">used</span> : <span className="chip gray">dropped</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="check-reason" style={{ marginTop: 10 }}>The top {retr.top_k} sections (green) become the only policy text the agent is allowed to use - so every claim it makes can be cited back to one of these. This is the &quot;retrieval&quot; that the &quot;generation&quot; is augmented with.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {view === "evals" && (
         <div className="page">
           <div className="panel">
