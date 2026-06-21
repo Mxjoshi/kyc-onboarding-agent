@@ -116,6 +116,7 @@ export default function Home() {
   const [retrLoading, setRetrLoading] = useState(false);
   const [retrCustomer, setRetrCustomer] = useState<string>("");
   const [mapStep, setMapStep] = useState(0);
+  const [mapSel, setMapSel] = useState<any>(null);
   const [flt, setFlt] = useState({ outcome: "all", status: "all", mode: "all", q: "" });
 
   useEffect(() => {
@@ -147,7 +148,7 @@ export default function Home() {
   async function runRetrieval() {
     const id = retrCustomer || customers[0]?.id;
     if (!id) return;
-    setRetrLoading(true); setRetr(null);
+    setRetrLoading(true); setRetr(null); setMapSel(null);
     try { const d = await fetch("/api/retrieval", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customer: id }) }).then((r) => r.json()); setRetr(d); }
     catch {} finally { setRetrLoading(false); }
   }
@@ -622,9 +623,10 @@ export default function Home() {
                         <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="var(--green)" strokeWidth={1} opacity={0.35} />
                       ))}
                       {pts.map((p: any, i: number) => (
-                        <g key={i}>
+                        <g key={i} style={{ cursor: "pointer" }} onClick={() => setMapSel(p)}>
+                          {mapSel && mapSel.section === p.section && <circle cx={p.x} cy={p.y} r={p.used ? 13 : 11} fill="none" stroke="var(--brand)" strokeWidth={2} />}
                           <circle cx={p.x} cy={p.y} r={p.used ? 9 : 7} fill={p.used ? "var(--green)" : "var(--muted)"} opacity={p.used ? 1 : 0.55} />
-                          <text x={p.x} y={p.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff">{p.num}</text>
+                          <text x={p.x} y={p.y + 3.5} textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff" style={{ pointerEvents: "none" }}>{p.num}</text>
                           <title>{p.section} - similarity {p.score.toFixed(3)} ({p.used ? "used" : "dropped"})</title>
                         </g>
                       ))}
@@ -639,7 +641,18 @@ export default function Home() {
                 <span><i style={{ background: "var(--green)" }} />used (top {retr.top_k})</span>
                 <span><i style={{ background: "var(--muted)" }} />dropped</span>
               </div>
-              <p className="check-reason" style={{ marginTop: 10 }}>The number in each dot is its policy section. Dots near the centre matched the case most closely (highest similarity), so they were kept and sent to the agent; dots near the edge were the least related and were dropped. Same data as the table above - just drawn as a map.</p>
+              {mapSel ? (
+                <div className="cite" style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <b>{mapSel.section}</b>
+                    <span className="muted-sm">similarity {mapSel.score.toFixed(3)}</span>
+                    <span className={`chip ${mapSel.used ? "green" : "gray"}`}>{mapSel.used ? "used" : "dropped"}</span>
+                  </div>
+                  <pre className="cite-src" style={{ whiteSpace: "pre-wrap" }}>{mapSel.text}</pre>
+                </div>
+              ) : (
+                <p className="check-reason" style={{ marginTop: 10 }}>The number in each dot is its policy section. Dots near the centre matched the case most closely, so they were kept and sent to the agent; dots near the edge were the least related and were dropped. <b>Click any dot to read that section&apos;s full rule.</b></p>
+              )}
             </div>
           )}
         </div>

@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     score: s.score,                    // cosine similarity, 0..1, higher = closer in meaning
     used: i < TOP_K,                   // the top K are sent to the agent
     preview: String(s.text).replace(/\s+/g, " ").slice(0, 180),
+    text: String(s.text),              // full section text (revealed when a dot is clicked)
   }));
 
   return Response.json({
