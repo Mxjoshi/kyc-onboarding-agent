@@ -11,6 +11,18 @@ export const maxDuration = 60;
 
 const TOP_K = 7; // how many sections the agent receives (matches answerCase)
 
+// Grammatical filler to ignore when showing which words a section shares with the case.
+// (This overlap is only an intuition aid - the real match is by meaning, see note in the UI.)
+const STOP = new Set([
+  "the", "and", "for", "are", "was", "with", "that", "this", "from", "not", "has", "any",
+  "all", "its", "they", "their", "such", "may", "must", "will", "shall", "into", "per",
+  "case", "section", "provided", "status",
+]);
+function terms(t: string): string[] {
+  return String(t).toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP.has(w));
+}
+
 export async function POST(request: Request) {
   const { customer } = await request.json();
   const c = customersData.customers.find((x) => x.id === customer);
@@ -30,6 +42,7 @@ export async function POST(request: Request) {
   const query = buildCaseQuery(facts);
   const ranked = await scoreAll(query); // every section, best match first
 
+  const qset = new Set(terms(query));   // the meaningful words in the case query
   const sections = ranked.map((s: any, i: number) => ({
     rank: i + 1,
     section: s.section,
@@ -37,6 +50,9 @@ export async function POST(request: Request) {
     used: i < TOP_K,                   // the top K are sent to the agent
     preview: String(s.text).replace(/\s+/g, " ").slice(0, 180),
     text: String(s.text),              // full section text (revealed when a dot is clicked)
+    // words this section shares with the case query - a rough hint at the overlap.
+    // The real ranking is by meaning (embeddings), which can match with NO shared word.
+    shared_terms: [...new Set(terms(s.section + " " + s.text).filter((w) => qset.has(w)))].slice(0, 10),
   }));
 
   return Response.json({

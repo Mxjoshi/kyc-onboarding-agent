@@ -520,15 +520,19 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <table className="audit rubric-table" style={{ marginBottom: 14 }}>
-              <tbody>
-                <tr><td><b>What this is</b></td><td>RAG = retrieval-augmented generation. Before the AI decides, we FIND the few policy sections that actually relate to the case and give it ONLY those. The AI never answers from memory.</td></tr>
-                <tr><td><b>Why it matters</b></td><td>Grounding every answer in retrieved policy is what makes citations possible and stops the AI inventing rules. Good decisions start with good retrieval.</td></tr>
-                <tr><td><b>How it works</b></td><td>Each policy section and the case are turned into &quot;meaning-numbers&quot; (embeddings) by a small model running locally (transformers.js). We score every section by closeness in meaning (cosine similarity) and keep the top {retr?.top_k ?? 7}.</td></tr>
-                <tr><td><b>How to read it</b></td><td>Higher score = closer in meaning. The green &quot;used&quot; rows are sent to the agent; the grey ones are dropped. (In Onboarding, &quot;Break it&quot; deliberately feeds the agent the dropped rows instead - bad retrieval - so you can watch the trust layer catch the failure.)</td></tr>
-              </tbody>
-            </table>
-            <div className="run-row">
+            <p className="check-reason" style={{ marginBottom: 12 }}>Pick a customer and run the search to see which policy sections the agent is given for that case.</p>
+            <details className="ragabout">
+              <summary>New to RAG? What this is and how to read it</summary>
+              <table className="audit rubric-table" style={{ marginTop: 10 }}>
+                <tbody>
+                  <tr><td><b>What this is</b></td><td>RAG = retrieval-augmented generation. Before the AI decides, we FIND the few policy sections that actually relate to the case and give it ONLY those. The AI never answers from memory.</td></tr>
+                  <tr><td><b>Why it matters</b></td><td>Grounding every answer in retrieved policy is what makes citations possible and stops the AI inventing rules. Good decisions start with good retrieval.</td></tr>
+                  <tr><td><b>How it works</b></td><td>Each policy section and the case are turned into &quot;meaning-numbers&quot; (embeddings) by a small model running locally (transformers.js). We score every section by closeness in meaning (cosine similarity) and keep the top {retr?.top_k ?? 7}.</td></tr>
+                  <tr><td><b>How to read it</b></td><td>Higher score = closer in meaning. The green &quot;used&quot; rows are sent to the agent; the grey ones are dropped. (In Onboarding, &quot;Break it&quot; deliberately feeds the agent the dropped rows instead - bad retrieval - so you can watch the trust layer catch the failure.)</td></tr>
+                </tbody>
+              </table>
+            </details>
+            <div className="run-row" style={{ marginTop: 14 }}>
               <label className="run-label">Customer&nbsp;
                 <select value={retrCustomer} onChange={(e) => { setRetrCustomer(e.target.value); setRetr(null); }}>
                   {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -606,11 +610,18 @@ export default function Home() {
               </div>
               {mapSel ? (
                 <div className="cite" style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <b>{mapSel.section}</b>
                     <span className="muted-sm">similarity {mapSel.score.toFixed(3)}</span>
                     <span className={`chip ${mapSel.used ? "green" : "gray"}`}>{mapSel.used ? "kept" : "dropped"}</span>
                   </div>
+                  {mapSel.shared_terms && mapSel.shared_terms.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span className="muted-sm">Words it shares with the case: </span>
+                      {mapSel.shared_terms.map((t: string) => <span key={t} className="term-chip">{t}</span>)}
+                    </div>
+                  )}
+                  <p className="muted-sm" style={{ margin: "0 0 8px" }}>These shared words are only a hint. The ranking is really by <b>meaning</b> (embeddings), so a section can match even with no word in common (e.g. &quot;salary&quot; matches &quot;income&quot;).</p>
                   <pre className="cite-src" style={{ whiteSpace: "pre-wrap" }}>{mapSel.text}</pre>
                 </div>
               ) : (
