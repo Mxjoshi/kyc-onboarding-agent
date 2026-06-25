@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   const ranked = await scoreAll(query); // every section, best match first
 
   const qset = new Set(terms(query));   // the meaningful words in the case query
-  const sections = ranked.map((s: any, i: number) => ({
+  const sections = ranked.map((s: { section: string; score: number; text: string }, i: number) => ({
     rank: i + 1,
     section: s.section,
     score: s.score,                    // cosine similarity, 0..1, higher = closer in meaning

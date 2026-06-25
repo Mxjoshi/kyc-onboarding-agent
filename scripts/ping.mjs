@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "node:fs";
+import { MODEL } from "../src/lib/config.mjs";
 // load .env.local manually (scripts run outside Next.js)
 for (const line of readFileSync(".env.local","utf8").split("\n")) {
   const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*)$/);
@@ -7,7 +8,7 @@ for (const line of readFileSync(".env.local","utf8").split("\n")) {
 }
 const client = new Anthropic();
 const r = await client.messages.create({
-  model: "claude-opus-4-8",
+  model: MODEL,
   max_tokens: 20,
   messages: [{ role: "user", content: "Reply with exactly: KEY OK" }],
 });

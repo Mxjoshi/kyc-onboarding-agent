@@ -27,6 +27,12 @@ type Rec = {
   recommendation: Decision["recommendation"]; confidence: string; score: number; rca_tag: string; all_passed: boolean; breakIt: boolean;
   officer_status?: string; officer_ts?: string; officer_note?: string;
 };
+// Shapes returned by /api/retrieval (the RAG view) and /api/discrimination (the trust eval).
+type RetrSection = { rank: number; section: string; score: number; used: boolean; preview: string; text: string; shared_terms: string[] };
+type Retrieval = { customer: string; name: string; query: string; top_k: number; total: number; sections: RetrSection[] };
+type MapPoint = RetrSection & { num: string; x?: number; y?: number; r?: number };
+type EvalCase = { name: string; claimed: string; flaw: string; caught: boolean; score: number; failed_checks: string[]; rca_tag: string; per_check: Check[] };
+type Discrimination = { rubric: { id: string; question: string }[]; cases: EvalCase[]; caught: number; total: number };
 
 const ICON_COLOR: Record<string, string> = {
   passport: "#4f46e5", id: "#0d9488", visa: "#7c3aed", salary: "#16a34a", home: "#d97706", shield: "#2563eb",
@@ -132,13 +138,13 @@ export default function Home() {
   const [stage, setStage] = useState("");
   const [log, setLog] = useState<Rec[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [evals, setEvals] = useState<any>(null);
+  const [evals, setEvals] = useState<Discrimination | null>(null);
   const [evalLoading, setEvalLoading] = useState(false);
-  const [retr, setRetr] = useState<any>(null);
+  const [retr, setRetr] = useState<Retrieval | null>(null);
   const [retrLoading, setRetrLoading] = useState(false);
   const [retrCustomer, setRetrCustomer] = useState<string>("");
   const [mapStep, setMapStep] = useState(0);
-  const [mapSel, setMapSel] = useState<any>(null);
+  const [mapSel, setMapSel] = useState<MapPoint | null>(null);
   const [flt, setFlt] = useState({ outcome: "all", status: "all", mode: "all", q: "" });
 
   useEffect(() => {
@@ -194,7 +200,7 @@ export default function Home() {
           if (msg.step === "done") setResult(msg.result); else if (msg.step === "error") setError(msg.error); else setStage(msg.step); }
       }
       fetchLog();
-    } catch (e: any) { setError(e.message || "Something went wrong"); }
+    } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong"); }
     finally { setLoading(false); setStage(""); }
   }
 
@@ -606,9 +612,9 @@ export default function Home() {
                   {(() => {
                     const cx = 175, cy = 165, minR = 40, maxR = 140;
                     const secs = retr.sections;
-                    const scores = secs.map((s: any) => s.score);
+                    const scores = secs.map((s) => s.score);
                     const max = Math.max(...scores), min = Math.min(...scores);
-                    const pts = secs.map((s: any, i: number) => {
+                    const pts = secs.map((s, i: number) => {
                       const norm = max === min ? 0.5 : (s.score - min) / (max - min); // 1 = closest
                       const r = minR + (1 - norm) * (maxR - minR);
                       const ang = i * (2 * Math.PI / secs.length) - Math.PI / 2;
@@ -625,11 +631,11 @@ export default function Home() {
                         <circle cx={cx} cy={cy} r={cutoffR} fill="none" stroke="var(--green)" strokeWidth={1.5} strokeDasharray="5 4" />
                         <text x={cx} y={cy - cutoffR - 7} textAnchor="middle" fontSize="11" fontWeight="700" fill="var(--green)">cut-off: top {k} kept</text>
                         {/* spokes to kept dots */}
-                        {pts.filter((p: any) => p.used).map((p: any, i: number) => (
+                        {pts.filter((p) => p.used).map((p, i: number) => (
                           <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="var(--green)" strokeWidth={1} opacity={0.3} />
                         ))}
                         {/* dots */}
-                        {pts.map((p: any, i: number) => (
+                        {pts.map((p, i: number) => (
                           <g key={i} style={{ cursor: "pointer" }} onClick={() => setMapSel(p)}>
                             {mapSel && mapSel.section === p.section && <circle cx={p.x} cy={p.y} r={p.used ? 14 : 12} fill="none" stroke="var(--brand)" strokeWidth={2} />}
                             <circle cx={p.x} cy={p.y} r={p.used ? 11 : 9} fill={p.used ? "var(--green)" : "var(--muted)"} opacity={p.used ? 1 : 0.5} />
@@ -647,7 +653,7 @@ export default function Home() {
                 {/* the key: which number is which section */}
                 <div className="simmap-key">
                   <div className="simmap-key-h">What each number is (click a row or dot)</div>
-                  {retr.sections.map((s: any) => {
+                  {retr.sections.map((s) => {
                     const num = (String(s.section).match(/\d+/) || ["?"])[0];
                     const name = String(s.section).replace(/^Section\s*\d+\.?\s*/i, "");
                     const on = mapSel && mapSel.section === s.section;
@@ -752,7 +758,7 @@ export default function Home() {
                   : <span className="chip red">a bad answer slipped through</span>}
               </div>
               <div className="eval-cards">
-                {evals.cases.map((c: any, i: number) => (
+                {evals.cases.map((c, i: number) => (
                   <div key={i} className={`eval-card ${c.caught ? "caught" : "missed"}`}>
                     <div className="eval-card-h">
                       <b>{c.name}</b>
@@ -762,7 +768,7 @@ export default function Home() {
                     <div className="eval-flaw"><b>Why it is wrong:</b> {c.flaw}</div>
                     <div className="checkdots">
                       {RUBRIC_ORDER.map((id) => {
-                        const chk = c.per_check.find((p: any) => p.check_id === id);
+                        const chk = c.per_check.find((p) => p.check_id === id);
                         const passed = chk?.passed;
                         const meta = CHECK_META[id];
                         return (

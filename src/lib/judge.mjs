@@ -6,9 +6,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MODEL } from "./config.mjs";
 
 const POLICY_PATH = join(process.cwd(), "data", "policy", "acme-bank-kyc-aml-policy.md");
-const MODEL = "claude-opus-4-8";
 
 // The rubric: the yes/no checks every answer must pass.
 export const RUBRIC = [

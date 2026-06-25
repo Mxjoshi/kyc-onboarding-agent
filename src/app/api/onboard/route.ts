@@ -17,7 +17,7 @@ function resolveSource(citationSection: string): string {
   const m = citationSection.match(/(\d+)/);
   if (!m) return "";
   const n = m[1];
-  const chunk = (policyIndex as any[]).find((c) => new RegExp(`^Section ${n}\\.`).test(c.section));
+  const chunk = (policyIndex as { section: string; text: string }[]).find((c) => new RegExp(`^Section ${n}\\.`).test(c.section));
   return chunk ? chunk.text : "";
 }
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (obj: any) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      const send = (obj: Record<string, unknown>) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
         const { decision, retrieved_sections } = await answerCase(facts, {
           breakIt: !!breakIt,
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
         });
         send({ step: "grading" });
         const grade = await judge({ caseDescription, answer: decision, availableSections: retrieved_sections });
-        const citations = (decision.citations || []).map((cit: any) => ({
+        const citations = (decision.citations || []).map((cit: { claim: string; section: string }) => ({
           ...cit,
           source_text: resolveSource(cit.section),
         }));
@@ -67,8 +67,8 @@ export async function POST(request: Request) {
           step: "done",
           result: { case_id: record.case_id, ts: record.ts, customer: c.id, name: c.name, breakIt: !!breakIt, decision, citations, retrieved_sections, eval: grade, rubric: RUBRIC },
         });
-      } catch (e: any) {
-        send({ step: "error", error: e?.message || String(e) });
+      } catch (e) {
+        send({ step: "error", error: e instanceof Error ? e.message : String(e) });
       }
       controller.close();
     },

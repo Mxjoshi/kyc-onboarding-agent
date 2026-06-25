@@ -105,10 +105,12 @@ kyc-onboarding-agent/
 │   ├── lib/
 │   │   ├── onboarding.mjs      # the agent: retrieve -> decide -> cite -> refuse
 │   │   ├── judge.mjs           # the trust layer: rubric + LLM judge + root-cause tag
-│   │   └── store.mjs           # in-memory decisions store
+│   │   ├── store.mjs           # in-memory decisions store
+│   │   └── config.mjs          # the model id (one source of truth, env-overridable)
 │   └── data/
 │       ├── customers.json      # 8 sample applicants (varied outcomes)
 │       └── policy-index.json   # the built searchable policy index (9 chunks)
+├── tests/                      # unit tests (node:test, no key needed): npm test
 ├── data/policy/
 │   └── acme-bank-kyc-aml-policy.md   # the synthetic bank policy (the source of truth)
 ├── scripts/
@@ -152,6 +154,7 @@ npm run dev        # start the dev server (localhost:3000)
 npm run build      # production build (also type-checks the whole app)
 npm run start      # run the production build
 npm run lint       # lint
+npm test           # unit tests (store + query logic; no API key needed, runs in ms)
 
 node scripts/ping.mjs                                          # check your Anthropic key works (prints KEY OK)
 node scripts/build-index.mjs                                   # rebuild the policy index
@@ -165,6 +168,7 @@ node scripts/test-evals.mjs                                    # run the trust l
 | Variable | Required | Notes |
 |----------|----------|-------|
 | `ANTHROPIC_API_KEY` | yes | Your Anthropic API key. Local: in `.env.local`. Hosted: set as a secret env var. |
+| `ANTHROPIC_MODEL` | no | Override the model used by the agent and judge. Defaults to `claude-opus-4-8` (see `src/lib/config.mjs`). |
 
 Node.js 20+ is required (pinned in `package.json` and `render.yaml`).
 

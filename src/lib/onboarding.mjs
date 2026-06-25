@@ -8,12 +8,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { pipeline, env } from "@xenova/transformers";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { MODEL } from "./config.mjs";
 
 // Resolve from the app root (cwd is the app dir for both the scripts and Next.js dev).
 const INDEX_PATH = join(process.cwd(), "src", "data", "policy-index.json");
 env.allowLocalModels = false;
-
-const MODEL = "claude-opus-4-8";
 
 // Lazy singletons so we load the model and index once.
 let _index = null;
@@ -132,24 +131,31 @@ export async function answerCase(caseFacts, opts = {}) {
 
   opts.onStep?.("deciding");
   const client = new Anthropic();
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 1200,
-    system: SYSTEM,
-    output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
-    messages: [
-      {
-        role: "user",
-        content:
-          `CUSTOMER CASE:\n${summary}\n\n` +
-          `POLICY SECTIONS (the only source you may use):\n\n${policyText}\n\n` +
-          `Decide the onboarding outcome and cite the sections you used.`,
-      },
-    ],
-  });
-
-  const text = response.content.find((b) => b.type === "text")?.text ?? "{}";
-  const decision = JSON.parse(text);
+  // Wrap the API call + parse so a network failure or malformed model output surfaces a clear,
+  // contextual error rather than a raw SDK stack or JSON.parse crash. Callers (the HTTP route and
+  // the eval scripts) get one predictable failure shape; we re-throw so existing catch blocks fire.
+  let decision;
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 1200,
+      system: SYSTEM,
+      output_config: { format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
+      messages: [
+        {
+          role: "user",
+          content:
+            `CUSTOMER CASE:\n${summary}\n\n` +
+            `POLICY SECTIONS (the only source you may use):\n\n${policyText}\n\n` +
+            `Decide the onboarding outcome and cite the sections you used.`,
+        },
+      ],
+    });
+    const text = response.content.find((b) => b.type === "text")?.text ?? "{}";
+    decision = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`onboarding decision failed: ${err?.message ?? err}`);
+  }
   return { decision, retrieved_sections: retrieved.map((c) => c.section) };
 }
 
@@ -176,30 +182,38 @@ const QUESTION_SCHEMA = {
 // Answer a free-text policy question, or refuse if the policy does not cover it.
 // Used to demonstrate honest refusal on the deliberate policy gap.
 export async function answerQuestion(question) {
-  const retrieved = await retrieve(question, 5);
+  // Free-text enters the prompt here, so clamp length and coerce to a string: a guard against
+  // runaway input and the simplest prompt-injection surface. (A production build would add more.)
+  const q = String(question ?? "").slice(0, 2000).trim();
+  const retrieved = await retrieve(q, 5);
   const policyText = retrieved.map((c) => `[${c.section}]\n${c.text}`).join("\n\n");
 
   const client = new Anthropic();
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 800,
-    system:
-      `You are a KYC and AML onboarding assistant for Acme Bank UAE. Answer ONLY from the ` +
-      `provided policy sections, citing the exact section for each claim. If the provided policy ` +
-      `does not contain the answer, set answered to false, say plainly that the policy does not ` +
-      `cover this and the case should be escalated to a human, and do NOT guess or invent a rule.`,
-    output_config: { format: { type: "json_schema", schema: QUESTION_SCHEMA } },
-    messages: [
-      {
-        role: "user",
-        content:
-          `QUESTION: ${question}\n\n` +
-          `POLICY SECTIONS (the only source you may use):\n\n${policyText}\n\n` +
-          `Answer the question, or refuse if the policy does not cover it.`,
-      },
-    ],
-  });
-
-  const text = response.content.find((b) => b.type === "text")?.text ?? "{}";
-  return { result: JSON.parse(text), retrieved_sections: retrieved.map((c) => c.section) };
+  let result;
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 800,
+      system:
+        `You are a KYC and AML onboarding assistant for Acme Bank UAE. Answer ONLY from the ` +
+        `provided policy sections, citing the exact section for each claim. If the provided policy ` +
+        `does not contain the answer, set answered to false, say plainly that the policy does not ` +
+        `cover this and the case should be escalated to a human, and do NOT guess or invent a rule.`,
+      output_config: { format: { type: "json_schema", schema: QUESTION_SCHEMA } },
+      messages: [
+        {
+          role: "user",
+          content:
+            `QUESTION: ${q}\n\n` +
+            `POLICY SECTIONS (the only source you may use):\n\n${policyText}\n\n` +
+            `Answer the question, or refuse if the policy does not cover it.`,
+        },
+      ],
+    });
+    const text = response.content.find((b) => b.type === "text")?.text ?? "{}";
+    result = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`policy question failed: ${err?.message ?? err}`);
+  }
+  return { result, retrieved_sections: retrieved.map((c) => c.section) };
 }
